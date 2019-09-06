@@ -3,23 +3,33 @@ import numpy as np
 import cv2
 import Person
 import time
+import mail
 import argparse
 import imutils
 from imutils.video import FileVideoStream
 from imutils.video import FPS
 
+
 INST_WIDTH = 800
 INST_HEIGHT = 600
-
+# http://docs.opencv.org/master/d3/dc0/group__imgproc__shape.html#ga17ed9f5d79ae97bd4c7cf18403e1689a&gsc.tab=0
+# http://docs.opencv.org/master/d4/d73/tutorial_py_contours_begin.html#gsc.tab=0
 
 ### Input and Output Counters
 cnt_up = 0
 cnt_down = 0
 
+# construct the argument parse and parse the arguments
+#ap = argparse.ArgumentParser()
+#p.add_argument("-v", "--video", required=True,
+#    help="path to input video file")
+#args = vars(ap.parse_args())
 
 ### Open video file
-cap = cv2.VideoCapture('src/demo.mp4')
-
+cap = cv2.VideoCapture('src/TOPU_DEMO.mp4')
+#cap = cv2.VideoCapture('http://192.168.43.132:8000/stream.mjpg')
+#cap = cv2.VideoCapture('http://192.168.0.116:8000/stream.mjpg')
+#cap = cv2.resize(cap, (400, 300))
 
 w = INST_WIDTH
 h = INST_HEIGHT
@@ -59,7 +69,7 @@ pt8 = [w, down_limit]
 pts_L4 = np.array([pt7, pt8], np.int32)
 pts_L4 = pts_L4.reshape((-1,1,2))
 
-
+#kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3,3))
 ### Create the background substractor
 fgbg = cv2.createBackgroundSubtractorMOG2(detectShadows = True)
 
@@ -102,25 +112,26 @@ while(cap.isOpened()):
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernelCl)
         mask2 = cv2.morphologyEx(mask2, cv2.MORPH_CLOSE, kernelCl)
         #cv2.imshow('Frame', frame)
-        #############cv2.imshow('Background Subtraction', fgmask)
-        #############cv2.imshow('Morphology Extraction', mask)
+        cv2.imshow('Background Subtraction', fgmask)
+        cv2.imshow('Morphology Extraction', mask)
     except:
         #if there are no more frames to show
         print('EOF')
-
+        print('UP:', cnt_up)
+        print('DOWN:', cnt_down)
         break
 
     ### Find Contour ###
-
+    #_, contours0, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     _, contours0, hierarchy = cv2.findContours(mask2, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     for cnt in contours0:
-
+        #cv2.drawContours(frame, cnt, -1, (0,255,0), 3, 8)
         area = cv2.contourArea(cnt)
         print(area)
         if area > areaTH:
-
-            ###  TRACKING ###
-
+            #############
+            #  TRACKING #
+            #############
             M = cv2.moments(cnt)
             cx = int(M['m10']/M['m00'])
             cy = int(M['m01']/M['m00'])
@@ -136,6 +147,7 @@ while(cap.isOpened()):
                         if i.going_UP(line_down, line_up) == True:
                             cnt_up += 1;
                             print("ID:", i.getId(), 'crossed going up at', time.strftime("%c"))
+                            #mail.notify()
                         elif i.going_DOWN(line_down, line_up) == True:
                             cnt_down += 1;
                             print("ID:", i.getId(), 'crossed going down at', time.strftime("%c"))
@@ -157,27 +169,51 @@ while(cap.isOpened()):
                     p = Person.MyPerson(pid, cx, cy, max_p_age)
                     persons.append(p)
                     pid += 1
-
+            ################
             #   DRAWING    #
-
+            ################
             cv2.circle(frame, (cx, cy), 5, (0,0,255), -1)
             img = cv2.rectangle(frame, (x, y), (x+w, y+h), (0,255,0), 2)
+            #cv2.drawContours(frame, cnt, -1, (0,255,0), 3)
 
-
-
+        #############################
         #   DRAWING TRAJECTORIES    #
-
+        #############################
         for i in persons:
-
+            #if len(i.getTracks()) >= 2:
+            #    pts = np.array(i.getTracks(), np.int32)
+            #    pts = pts.reshape((-1,1,2))
+            #    frame = cv2.polylqines(frame, [pts], False, i.getRGB())
+            #if i.getId() == 9:
+            #    print str(i.getX()), ',', str(i.getY())
             cv2.putText(frame, str(i.getId()), (i.getX(), i.getY()), font, 0.3, i.getRGB(), 1, cv2.LINE_AA)
 
-
+        #############
+        #   IMAGES  #
+        #############
+        str_up = 'UP: ' + str(cnt_up)
+        str_down = 'DOWN: ' + str(cnt_down)
+        frame = cv2.polylines(frame, [pts_L1], False, line_down_color, thickness=2)
+        frame = cv2.polylines(frame, [pts_L2], False, line_up_color, thickness=2)
+        # line limit
+        frame = cv2.polylines(frame, [pts_L3], False, (255,255,255), thickness=1)
+        frame = cv2.polylines(frame, [pts_L4], False, (255,255,255), thickness=1)
+        cv2.putText(frame, str_up, (10,40), font, 0.5, (255,255,255), 2, cv2.LINE_AA)
+        cv2.putText(frame, str_up, (10,40), font, 0.5, (0,0,255), 1, cv2.LINE_AA)
+        cv2.putText(frame, str_down, (10,90), font, 0.5, (255,255,255), 2, cv2.LINE_AA)
+        cv2.putText(frame, str_down, (10, 90), font, 0.5, (255,0,0), 1, cv2.LINE_AA)
         cv2.imshow('Frame', frame)
+
+
+
+
 
     ### Abort and exit with 'q' or ESC ###
     if cv2.waitKey(1) & 0xff == ord('q'):
+        mail.notify(cnt_down,cnt_up)
         break
 
 ### Release video file
 cap.release()
 cv2.destroyAllWindows() ### Close all opencv windows
+
